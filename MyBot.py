@@ -47,7 +47,7 @@ async def analyze_face(image_path):
         x, y, w, h = face["region"]["x"], face["region"]["y"], face["region"]["w"], face["region"]["h"]
         cv2.rectangle(img, (x, y), (x + w, y + h), color, thickness)
 
-        # Текст для консоли
+        # --- Текст для консоли ---
         print(f"Face {idx + 1}:")
         lines = [
             f"Gender: {face['dominant_gender']}",
@@ -58,9 +58,13 @@ async def analyze_face(image_path):
         for text in lines:
             print("  ", text)
 
-        # Текст на изображении
+        # --- Текст на изображении с проверкой верхнего края ---
         for i, text in enumerate(lines):
-            cv2.putText(img, text, (x, max(y - 10 - i*25, 0)), font, font_scale, color, thickness, cv2.LINE_AA)
+            text_y = y - 10 - i*25  # стандартная позиция сверху рамки
+            if text_y < 0:
+                # если текст не помещается сверху, рисуем внутри рамки
+                text_y = y + 15 + i*25
+            cv2.putText(img, text, (x, text_y), font, font_scale, color, thickness, cv2.LINE_AA)
 
     return img, results
 
@@ -72,28 +76,19 @@ async def help_text(update, context):
     await update.message.reply_text(update.message.text)
 
 # --- Object detection ---
-async def object_detection(update, context):
-    user_id = update.message.from_user.id
+async def object_detection(update, context, image_path):
     my_message = await update.message.reply_text("Photo received. Detecting objects...")
-
-    user_dir = f"images/{user_id}"
-    os.makedirs(user_dir, exist_ok=True)
-
-    new_file = await update.message.photo[-1].get_file()
-    image_name = os.path.basename(new_file.file_path)
-    image_path = os.path.join(user_dir, image_name)
-    await new_file.download_to_drive(image_path)
 
     results_yolo = model.predict(
         image_path,
         conf=0.5,
         save=True,
         project="runs/detect",
-        name=str(user_id),
+        name=str(update.message.from_user.id),
         exist_ok=True
     )
 
-    result_path = os.path.join("runs/detect", str(user_id), image_name)
+    result_path = os.path.join("runs/detect", str(update.message.from_user.id), os.path.basename(image_path))
     await context.bot.delete_message(chat_id=update.message.chat_id, message_id=my_message.message_id)
 
     if os.path.exists(result_path):
@@ -104,28 +99,15 @@ async def object_detection(update, context):
         await update.message.reply_text("Error: result not found.")
 
 # --- Age/Emotion/Race ---
-async def age_emotion_race(update, context):
-    if not update.message.photo:
-        await update.message.reply_text("Please send a photo first.")
-        return
-
-    user_id = update.message.from_user.id
+async def age_emotion_race(update, context, image_path):
     my_message = await update.message.reply_text("Analyzing age, emotion, race...")
-
-    user_dir = f"images/{user_id}"
-    os.makedirs(user_dir, exist_ok=True)
-
-    new_file = await update.message.photo[-1].get_file()
-    image_name = os.path.basename(new_file.file_path)
-    image_path = os.path.join(user_dir, image_name)
-    await new_file.download_to_drive(image_path)
 
     annotated_img, results = await analyze_face(image_path)
 
     await context.bot.delete_message(chat_id=update.message.chat_id, message_id=my_message.message_id)
 
     if annotated_img is not None:
-        result_path = os.path.join(user_dir, "annotated_" + image_name)
+        result_path = os.path.join(f"images/{update.message.from_user.id}", "annotated_" + os.path.basename(image_path))
         cv2.imwrite(result_path, annotated_img)
         with open(result_path, "rb") as img:
             await update.message.reply_photo(img)
@@ -137,24 +119,41 @@ async def age_emotion_race(update, context):
 async def text_handler(update, context):
     text = update.message.text
     if text == "Object detection":
-        if update.message.photo:
-            await object_detection(update, context)
-        else:
-            await update.message.reply_text("Please send a photo first.")
+        context.user_data['mode'] = 'yolo'
+        await update.message.reply_text("Send a photo for object detection.")
     elif text == "Age/Emotion/Race":
-        if update.message.photo:
-            await age_emotion_race(update, context)
-        else:
-            await update.message.reply_text("Please send a photo first.")
+        context.user_data['mode'] = 'face'
+        await update.message.reply_text("Send a photo for age/emotion/race analysis.")
     else:
         await help_text(update, context)
+
+# --- Общий хэндлер фото ---
+async def photo_handler(update, context):
+    if not update.message.photo:
+        await update.message.reply_text("Please send a photo first.")
+        return
+
+    user_id = update.message.from_user.id
+    user_dir = f"images/{user_id}"
+    os.makedirs(user_dir, exist_ok=True)
+
+    new_file = await update.message.photo[-1].get_file()
+    image_name = os.path.basename(new_file.file_path)
+    image_path = os.path.join(user_dir, image_name)
+    await new_file.download_to_drive(image_path)
+
+    mode = context.user_data.get('mode', 'yolo')
+    if mode == 'yolo':
+        await object_detection(update, context, image_path)
+    elif mode == 'face':
+        await age_emotion_race(update, context, image_path)
 
 # --- Основная функция ---
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.PHOTO, object_detection))
     app.add_handler(MessageHandler(filters.TEXT, text_handler))
+    app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
     app.run_polling()
 
 if __name__ == "__main__":
