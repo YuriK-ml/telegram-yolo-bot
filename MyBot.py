@@ -1,7 +1,7 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import ReplyKeyboardMarkup
 from dotenv import load_dotenv
-from ultralytics import YOLO
+from ultralytics import  YOLO
 import os
 
 load_dotenv()
