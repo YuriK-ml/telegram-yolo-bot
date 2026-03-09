@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env
+
+# VSCode
+.vscode/
+
+# папки с данными и результатами
+images/
+runs/
+yolov8n.pt
+yolov5x.pt
+
+# документы и временные файлы
+*.docx
+~$*
