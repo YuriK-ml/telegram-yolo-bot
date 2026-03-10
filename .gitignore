@@ -3,17 +3,30 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.env
+*.sqlite3
+*.log
+
+# Environment variables
+.env
+.env.*
+
+# Virtual environment
+agebot_env/
+venv/
 
 # VSCode
 .vscode/
 
-# папки с данными и результатами
+# Data, results, models
 images/
 runs/
-yolov8n.pt
-yolov5x.pt
+data/
+models/
 
-# документы и временные файлы
+# Temporary and document files
 *.docx
 ~$*
+
+# OS-specific
+.DS_Store
+Thumbs.db
