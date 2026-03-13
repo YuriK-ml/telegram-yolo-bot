@@ -5,11 +5,11 @@ from ultralytics import YOLO
 from deepface import DeepFace
 import os
 import cv2
-import numpy as np
+import glob
+import asyncio
 from telegram.error import TimedOut
 
 load_dotenv()
-# TOKEN = os.environ.get("TOKEN_YuriK")
 TOKEN = os.environ.get("TOKEN_Family")
 
 # --- Загружаем модель YOLOv8 (CPU) ---
@@ -39,7 +39,6 @@ async def analyze_face(image_path):
         enforce_detection=False
     )
 
-    # --- Добавляем рамки и текст через OpenCV ---
     color = (0, 0, 255)
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = max(0.5, img.shape[0] / 1000)
@@ -49,7 +48,6 @@ async def analyze_face(image_path):
         x, y, w, h = face["region"]["x"], face["region"]["y"], face["region"]["w"], face["region"]["h"]
         cv2.rectangle(img, (x, y), (x + w, y + h), color, thickness)
 
-        # --- Текст для консоли ---
         print(f"Face {idx + 1}:")
         lines = [
             f"Gender: {face['dominant_gender']}",
@@ -60,9 +58,8 @@ async def analyze_face(image_path):
         for text in lines:
             print("  ", text)
 
-        # --- Текст на изображении с проверкой верхнего края ---
         for i, text in enumerate(lines):
-            text_y = y - 10 - i*25  # стандартная позиция сверху рамки
+            text_y = y - 10 - i*25
             if text_y < 0:
                 text_y = y + 15 + i*25
             cv2.putText(img, text, (x, text_y), font, font_scale, color, thickness, cv2.LINE_AA)
@@ -76,9 +73,20 @@ async def start(update, context):
 async def help_text(update, context):
     await update.message.reply_text(update.message.text)
 
+# --- Очистка папки пользователя ---
+def cleanup_user_images(user_id, keep_last=5):
+    user_dir = f"images/{user_id}"
+    files = sorted(
+        glob.glob(os.path.join(user_dir, "*")),
+        key=os.path.getmtime
+    )
+    for f in files[:-keep_last]:
+        os.remove(f)
+
 # --- Object detection ---
 async def object_detection(update, context, image_path):
-    my_message = await update.message.reply_text("Photo received. Detecting objects...")
+    # --- промежуточное сообщение ---
+    status_msg = await update.message.reply_text("Detecting objects...")
 
     results_yolo = model.predict(
         image_path,
@@ -86,70 +94,88 @@ async def object_detection(update, context, image_path):
         save=True,
         project="runs/detect",
         name=str(update.message.from_user.id),
-        exist_ok=True
+        exist_ok=True,
+        device="cpu",
+        imgsz=640
     )
 
     result_path = os.path.join("runs/detect", str(update.message.from_user.id), os.path.basename(image_path))
-    await context.bot.delete_message(chat_id=update.message.chat_id, message_id=my_message.message_id)
+    if not os.path.exists(result_path):
+        await status_msg.edit_text("Error: result not found")
+        return
 
-    if os.path.exists(result_path):
-        await update.message.reply_text("Object detection complete")
-        try:
-            with open(result_path, "rb") as f:
-                await update.message.reply_photo(photo=InputFile(f))
-        except TimedOut:
-            await update.message.reply_text("Error: sending photo timed out.")
-    else:
-        await update.message.reply_text("Error: result not found.")
+    img = cv2.imread(result_path)
+    if img is None:
+        await status_msg.edit_text("Error: result image unreadable")
+        return
+
+    max_dim = 700
+    h, w = img.shape[:2]
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        img = cv2.resize(img, (int(w*scale), int(h*scale)))
+
+    user_dir = f"images/{update.message.from_user.id}"
+    os.makedirs(user_dir, exist_ok=True)
+    result_jpg = os.path.join(user_dir, "detected_" + os.path.basename(result_path))
+    cv2.imwrite(result_jpg, img, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    cleanup_user_images(update.message.from_user.id, keep_last=5)
+
+    # --- Отправка изображения с подписью и замена текста ---
+    try:
+        with open(result_jpg, "rb") as f:
+            await update.message.reply_photo(photo=InputFile(f))
+        # заменяем промежуточное сообщение на итоговую подпись
+        await status_msg.edit_text("Detected image")
+    except TimedOut:
+        await status_msg.edit_text("Error: sending photo timed out")
 
 # --- Age/Emotion/Race ---
 async def age_emotion_race(update, context, image_path):
-    my_message = await update.message.reply_text("Analyzing age, emotion, race...")
+    status_msg = await update.message.reply_text("Analyzing age, emotion, race...")
 
     annotated_img, results = await analyze_face(image_path)
-    await context.bot.delete_message(chat_id=update.message.chat_id, message_id=my_message.message_id)
+    if annotated_img is None:
+        await status_msg.edit_text("Error: analysis failed")
+        return
 
-    if annotated_img is not None:
-        user_dir = f"images/{update.message.from_user.id}"
-        os.makedirs(user_dir, exist_ok=True)
-        result_path = os.path.join(user_dir, "annotated_" + os.path.basename(image_path))
+    user_dir = f"images/{update.message.from_user.id}"
+    os.makedirs(user_dir, exist_ok=True)
+    result_path = os.path.join(user_dir, "annotated_" + os.path.basename(image_path))
 
-        # --- Масштабирование изображения ---
-        max_dim = 900
-        h, w = annotated_img.shape[:2]
-        if max(h, w) > max_dim:
-            scale = max_dim / max(h, w)
-            annotated_img = cv2.resize(annotated_img, (int(w*scale), int(h*scale)))
-        
-        # --- Сохраняем с качеством 85% ---
-        cv2.imwrite(result_path, annotated_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    max_dim = 700
+    h, w = annotated_img.shape[:2]
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        annotated_img = cv2.resize(annotated_img, (int(w*scale), int(h*scale)))
 
-        # --- Отправка через InputFile с обработкой таймаута ---
-        try:
-            with open(result_path, "rb") as f:
-                await update.message.reply_photo(photo=InputFile(f))
-            await update.message.reply_text("Analysis complete.")
-        except TimedOut:
-            await update.message.reply_text("Error: sending photo timed out.")
-    else:
-        await update.message.reply_text("Error: analysis failed.")
+    cv2.imwrite(result_path, annotated_img, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    cleanup_user_images(update.message.from_user.id, keep_last=5)
+
+    try:
+        with open(result_path, "rb") as f:
+            await update.message.reply_photo(photo=InputFile(f))
+        # заменяем промежуточное сообщение на итоговую подпись
+        await status_msg.edit_text("Analyzed image")
+    except TimedOut:
+        await status_msg.edit_text("Error: sending photo timed out")
 
 # --- Текстовый хэндлер ---
 async def text_handler(update, context):
     text = update.message.text
     if text == "Object detection":
         context.user_data['mode'] = 'yolo'
-        await update.message.reply_text("Send a photo for object detection.")
+        await update.message.reply_text("Send a photo for object detection")
     elif text == "Age/Emotion/Race":
         context.user_data['mode'] = 'face'
-        await update.message.reply_text("Send a photo for age/emotion/race analysis.")
+        await update.message.reply_text("Send a photo for age/emotion/race analysis")
     else:
         await help_text(update, context)
 
 # --- Общий хэндлер фото ---
 async def photo_handler(update, context):
     if not update.message.photo:
-        await update.message.reply_text("Please send a photo first.")
+        await update.message.reply_text("Please send a photo first")
         return
 
     user_id = update.message.from_user.id
@@ -169,7 +195,15 @@ async def photo_handler(update, context):
 
 # --- Основная функция ---
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = (
+        Application.builder()
+        .token(TOKEN)
+        .read_timeout(180)
+        .write_timeout(180)
+        .connect_timeout(180)
+        .pool_timeout(180)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT, text_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
