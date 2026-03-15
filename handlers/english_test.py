@@ -3,39 +3,9 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from datetime import datetime
-from config.users import USERS, get_users_by_role, get_user_username
+from config.users import get_users_by_role, get_user_username
 from config.modes import get_mode_label   # ← ДОБАВИЛИ
-
-# --- 3 тестовых аккаунта ---
-TEST_USERS = [
-    {
-        "email": "test.english1@mail.ru",
-        "password": "0405",
-        "system_name": "test1",
-        "in_use": False,
-        "last_used": None,
-        "telegram_id": None
-    },
-    {
-        "email": "test.english2@mail.ru",
-        "password": "0506",
-        "system_name": "test2",
-        "in_use": False,
-        "last_used": None,
-        "telegram_id": None
-    },
-    {
-        "email": "test.english3@mail.ru",
-        "password": "2332",
-        "system_name": "test3",
-        "in_use": False,
-        "last_used": None,
-        "telegram_id": None
-    },
-]
-
-BASE_TEST_URL = "https://progressme.ru/classroom/2170177/lesson/1902485/section/8956326"
-LOGIN_URL_TEMPLATE = "https://progressme.ru/login?email={email}&redirect=" + BASE_TEST_URL
+from config.test_accounts import TEST_USERS, LOGIN_URL_TEMPLATE
 
 
 async def english_test_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, main_menu_keyboard):
@@ -99,10 +69,10 @@ async def english_test_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         "Можно отправить:\n"
         "• текстовое сообщение\n"
         "• фотографию или скриншот"
-       )
+    )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Open Test", url=login_link)],
+        [InlineKeyboardButton("🚀 Открыть Тест / Open Test 🔥", url=login_link)],
     ])
 
     await update.message.reply_text(

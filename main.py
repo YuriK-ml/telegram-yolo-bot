@@ -8,7 +8,7 @@ from handlers.text_commands import start, help_text as default_text_handler
 from handlers.photo_handler import photo_handler
 from handlers.button_handlers import object_detection_handler, age_emotion_race_handler
 from handlers.english_test import english_test_handler, forward_test_result
-from config.users import USERS, get_users_by_role
+from config.users_local import USERS, get_users_by_role
 
 load_dotenv()
 TOKEN = os.environ.get("TOKEN_Family")

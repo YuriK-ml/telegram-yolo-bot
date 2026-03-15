@@ -1,15 +1,19 @@
 # config/users.py
-
-USERS = {
-    1387433465: {
-        "username": "@YuriKorobkov",
-        "roles": ["admin", "teacher"]
-    },
-    8527953030: {
-        "username": "@Anna",
-        "roles": ["teacher"]
+# --- Пытаемся загрузить локальную конфигурацию ---
+try:
+    from .users_local import USERS
+except ImportError:
+    # --- fallback для GitHub ---
+    USERS = {
+        111111111: {
+            "username": "@example_admin",
+            "roles": ["admin", "teacher"]
+        },
+        222222222: {
+            "username": "@example_teacher",
+            "roles": ["teacher"]
+        }
     }
-}
 
 # --- Универсальная функция получения пользователей по роли ---
 def get_users_by_role(role):

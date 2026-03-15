@@ -1,5 +1,4 @@
 # .gitignore
-
 # Python
 __pycache__/
 *.pyc
@@ -11,6 +10,8 @@ __pycache__/
 # Environment variables
 .env
 .env.*
+config/test_accounts_local.py
+config/users_local.py
 
 # Virtual environment
 agebot_env/
@@ -32,3 +33,10 @@ models/
 # OS-specific
 .DS_Store
 Thumbs.db
+
+# --- Custom ignore ---
+# Не отслеживаем локальные сервисы
+services/
+
+# Старые или временные папки
+bot/
