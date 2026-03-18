@@ -9,31 +9,10 @@ from handlers.photo_handler import photo_handler
 from handlers.button_handlers import object_detection_handler, age_emotion_race_handler
 from handlers.english_test import english_test_handler, forward_test_result
 from config.users_local import USERS, get_users_by_role
+from functools import partial
 
 load_dotenv()
 TOKEN = os.environ.get("TOKEN_Family")
-
-# --- Пользователи системы ---
-# роли можно комбинировать
-USERS = {
-    1387433465: {
-        "username": "@YuriKorobkov",
-        "roles": ["admin", "teacher"]
-    },
-    8527953030: {
-        "username": "@Anna",
-        "roles": ["teacher"]
-    }
-}
-
-# --- Универсальная функция получения пользователей по роли ---
-def get_users_by_role(role):
-    return [
-        user_id
-        for user_id, data in USERS.items()
-        if role in data["roles"]
-    ]
-
 
 # --- Список кнопок ---
 keyboard = [
@@ -56,20 +35,24 @@ button_actions = {
 
 # --- Динамический текстовый хэндлер для кнопок ---
 async def text_handler(update, context):
-
     text = update.message.text
-    handler = button_actions.get(text)
 
-    if handler:
+    if text in button_actions:
+        # ✅ Если это НЕ кнопка English Test → сброс режима
+        if text != "English Test":
+            context.user_data["mode"] = None
+
+        handler = button_actions[text]
         await handler(update, context)
+        return
 
-    else:
-        # Если пользователь присылает текст как результат теста
-        if context.user_data.get("mode") == "english_test":
-            await forward_test_result(update, context)
-        else:
-            await default_text_handler(update, context, main_menu_keyboard)
+    # ✅ если пользователь в режиме теста → обрабатываем ответ
+    if context.user_data.get("mode") == "english_test":
+        await forward_test_result(update, context)
+        return
 
+    # ✅ иначе игнорируем текст
+    return
 
 # --- Фото (анализ или результат теста) ---
 async def photo_router(update, context):
@@ -94,7 +77,11 @@ def main():
     )
 
     # --- Команда /start ---
-    app.add_handler(CommandHandler("start", lambda u, c: start(u, c, main_menu_keyboard)))
+    # Используем partial, чтобы передать main_menu_keyboard в start
+    app.add_handler(CommandHandler(
+        "start",
+        partial(start, main_menu_keyboard=main_menu_keyboard)
+    ))
 
     # --- Текстовые сообщения ---
     app.add_handler(MessageHandler(filters.TEXT, text_handler))

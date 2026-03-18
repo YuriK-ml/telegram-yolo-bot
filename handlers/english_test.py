@@ -7,7 +7,6 @@ from config.users import get_users_by_role, get_user_username
 from config.modes import get_mode_label   # ← ДОБАВИЛИ
 from config.test_accounts import TEST_USERS, LOGIN_URL_TEMPLATE
 
-
 async def english_test_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, main_menu_keyboard):
     """
     Обработчик кнопки 'English Test'.
@@ -46,6 +45,32 @@ async def english_test_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # --- формируем ссылку для кнопки ---
     login_link = LOGIN_URL_TEMPLATE.format(email=user_account["email"])
 
+    # ===================== ДОБАВЛЕННЫЙ БЛОК (ЛОГ ДЛЯ УЧИТЕЛЯ) =====================
+    user = update.message.from_user
+
+    sender_name = user.first_name
+    if user.last_name:
+        sender_name += f" {user.last_name}"
+    if user.username:
+        sender_name += f" (@{user.username})"
+
+    system_name = user_account["system_name"]
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    teachers = get_users_by_role("teacher")
+
+    log_message = (
+        f"🟡 English Test STARTED  Time: {timestamp}\n"
+        f"User: {sender_name}  Login in ProgressMe: {system_name}"        
+    )
+
+    for teacher_id in teachers:
+        await context.bot.send_message(
+            chat_id=teacher_id,
+            text=log_message
+        )
+    # ===================== КОНЕЦ ДОБАВЛЕННОГО БЛОКА =====================
+
     # --- формируем сообщение ---
 
     # Old English version
@@ -63,12 +88,12 @@ async def english_test_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     text = (
         f"📚 *English Test*\n\n"
         f"🟢 Mode: {mode_label}\n\n"
-        "Press the button below to open the test.\n\n"
+        # "Press the button below to open the test.\n"
+        "Кликните на кнопку под сообщением для перехода в тест.\n"
         f"При необходимости укажите пароль: `{user_account['password']}`\n\n"
-        "После прохождения теста вы можете отправить результат здесь.\n"
-        "Можно отправить:\n"
-        "• текстовое сообщение\n"
-        "• фотографию или скриншот"
+        "После прохождения теста вы можете отправить\n"
+        "текстовое сообщение или фотографию преподавателю.\n\n"
+        "🟢 Для выхода из режима обратной связи - выберите любой пункт в меню"
     )
 
     keyboard = InlineKeyboardMarkup([
@@ -80,7 +105,6 @@ async def english_test_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
-
 
 async def forward_test_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -147,7 +171,7 @@ async def forward_test_result(update: Update, context: ContextTypes.DEFAULT_TYPE
     teacher_list = ", ".join([get_user_username(t) for t in teachers])
 
     # --- сбрасываем режим ---
-    context.user_data["mode"] = None
+    # context.user_data["mode"] = None
     await update.message.reply_text(
         f"✅ Result forwarded to teacher(s): {teacher_list} [{timestamp}]"
     )
